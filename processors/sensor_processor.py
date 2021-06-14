@@ -76,7 +76,7 @@ class Processor:
         }]
         self.init_and_update(dataframe_data)
 
-    def process_sensor_data(self, sensor_data: Dict):
+    def process_sensor_data(self, sensor_data: Dict) -> None:
         """The main function which receives the recorded data from sensor and updates the current recorded data.
 
         Args:
@@ -96,7 +96,7 @@ class Processor:
         if sensor_data["timestamp"] >= self.end_timeframe - 1:
             self.transform_update_data(sensor_data)
 
-    def post_processor(self):
+    def post_processor(self) -> None:
         """The post processor function which will be called after simulation ends.
 
         Here the files that we opened for writing is closed and the dataframe is converted to a csv.
@@ -109,7 +109,14 @@ class Processor:
         self.records_dataframe.to_csv(SENSOR_DATA_CSV_FILE)
         print("GENERATED A 15 MINS SEGMENTED CSV")
 
-    def generate_hourly_report(self, started_on, ended_on, user):
+    def generate_hourly_report(self, started_on: int, ended_on: int, user: str) -> None:
+        """Generates a hourly report from the dataframe that we created above.
+
+        Args:
+            started_on (int): The timestamp when simulation started.
+            ended_on (int): The timestamp of when simulation ended.
+            user (str): The name of the user.
+        """
         logger.info({
             "module": "Processor.post_processor",
             "msg": "CREATING_HOURLY_REPORT",
