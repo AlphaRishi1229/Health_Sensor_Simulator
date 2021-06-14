@@ -1,11 +1,17 @@
 """The processor file."""
-from typing import Dict
+from typing import Dict, List
 import logging
 
 import pandas as pd
 import ujson
 
-from constants import SEGMENTED_MINUTES, SENSOR_DATA_CSV_FILE, SENSOR_DATA_JSON_FILE
+from constants import (
+    HOURLY_SECONDS,
+    SEGMENTED_SECONDS,
+    SENSOR_DATA_CSV_FILE,
+    SENSOR_DATA_HOURLY_FILE,
+    SENSOR_DATA_JSON_FILE
+)
 
 
 logger = logging.getLogger("PROCESSOR")
@@ -19,7 +25,7 @@ class Processor:
             start_time (int): The current starting time of the processor.
         """
         self.start_timeframe: int = start_time
-        self.end_timeframe: int = self.start_timeframe + SEGMENTED_MINUTES
+        self.end_timeframe: int = self.start_timeframe + SEGMENTED_SECONDS
         # Data required to generate reports.
         self.min_heart_rate: int = float("inf")
         self.max_heart_rate: int = float("-inf")
@@ -29,6 +35,24 @@ class Processor:
         # Initialise the dataframe and the file to be written to.
         self.records_dataframe = pd.DataFrame()
         self.log_file = open(SENSOR_DATA_JSON_FILE, "w")
+
+    def init_and_update(self, dataframe_data: List) -> None:
+        """Reinitialises and updates properties of this processor class.
+
+        Args:
+            dataframe_data (List): The row of dataframe to be updated.
+        """
+        # Update new segment timeframe data.
+        self.start_timeframe = self.end_timeframe
+        self.end_timeframe = self.start_timeframe + SEGMENTED_SECONDS
+        # Re initialise all data for this segment.
+        self.min_heart_rate: int = float("inf")
+        self.max_heart_rate: int = float("-inf")
+        self.sum_heart_rate: int = 0
+        self.sum_resp_rate: int = 0
+        self.timeframe_count: int = 0
+        # Update dataframe with new rows.
+        self.records_dataframe = self.records_dataframe.append(dataframe_data, ignore_index=True)
 
     def transform_update_data(self, sensor_data: Dict) -> None:
         """The function transforms and adds the received sensor data and current data to a dataframe.
@@ -45,14 +69,12 @@ class Processor:
             "user_id": sensor_data["user_id"],
             "seg_start": self.start_timeframe,
             "seg_end": self.end_timeframe - 1,
-            "avg_hr": "{:.2f}".format(self.sum_heart_rate / self.timeframe_count),
+            "avg_hr": self.sum_heart_rate // self.timeframe_count,
             "min_hr": self.min_heart_rate,
             "max_hr": self.max_heart_rate,
-            "avg_rr": "{:.2f}".format(self.sum_resp_rate / self.timeframe_count)
+            "avg_rr": self.sum_resp_rate // self.timeframe_count
         }]
-        self.records_dataframe = self.records_dataframe.append(dataframe_data, ignore_index=True)
-        self.start_timeframe = self.end_timeframe
-        self.end_timeframe = self.start_timeframe + SEGMENTED_MINUTES
+        self.init_and_update(dataframe_data)
 
     def process_sensor_data(self, sensor_data: Dict):
         """The main function which receives the recorded data from sensor and updates the current recorded data.
@@ -85,3 +107,33 @@ class Processor:
         })
         self.log_file.close()
         self.records_dataframe.to_csv(SENSOR_DATA_CSV_FILE)
+        print("GENERATED A 15 MINS SEGMENTED CSV")
+
+    def generate_hourly_report(self, started_on, ended_on, user):
+        logger.info({
+            "module": "Processor.post_processor",
+            "msg": "CREATING_HOURLY_REPORT",
+        })
+
+        temp_dataframe = pd.DataFrame()
+        while started_on <= ended_on - HOURLY_SECONDS:
+            filter1 = self.records_dataframe["seg_start"] >= started_on
+            filter2 = self.records_dataframe["seg_end"] <= started_on + HOURLY_SECONDS
+            result_df = self.records_dataframe.loc[filter1 & filter2]
+
+            dataframe_data = [{
+                "user_id": user,
+                "seg_start": started_on,
+                "seg_end": started_on + (HOURLY_SECONDS - 1),
+                "avg_hr": int(result_df["avg_hr"].mean()),
+                "min_hr": int(result_df["min_hr"].min()),
+                "max_hr": int(result_df["max_hr"].max()),
+                "avg_rr": int(result_df["avg_rr"].mean())
+            }]
+            temp_dataframe = temp_dataframe.append(dataframe_data, ignore_index=True)
+
+            started_on += HOURLY_SECONDS
+
+        temp_dataframe.to_csv(SENSOR_DATA_HOURLY_FILE)
+
+        print("GENERATED A HOURLY REPORT CSV")
